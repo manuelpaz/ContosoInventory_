@@ -46,9 +46,9 @@ The starter application ships with a fully functional **Categories** feature. Du
 
 | Requirement | Value |
 |---|---|
-| Target framework | .NET 8.0 (with guidance for updating to .NET 9 or .NET 10) |
+| Target framework | .NET 10.0 |
 | Database | SQLite (via Entity Framework Core) |
-| ORM | Entity Framework Core 8.x with SQLite provider |
+| ORM | Entity Framework Core 10.x with SQLite provider |
 | Authentication | ASP.NET Core Identity with cookie-based sessions |
 | Frontend | Blazor WebAssembly (standalone, hosted by the server) |
 | API documentation | Swagger / Swashbuckle |
@@ -749,7 +749,7 @@ The application must run identically on Windows, macOS, and Linux. The following
 
 ### .NET SDK
 
-- The application targets `net8.0`, which is available on Windows, macOS (x64 and ARM64), and Linux (x64 and ARM64).
+- The application targets `net10.0`, which is available on Windows, macOS (x64 and ARM64), and Linux (x64 and ARM64).
 - The `.csproj` files should not include platform-specific runtime identifiers.
 
 ### Terminal commands
@@ -763,7 +763,7 @@ The application must run identically on Windows, macOS, and Linux. The following
 
 ### Prerequisites
 
-- .NET SDK 8.0 or later
+- .NET SDK 10.0 or later
 - Git 2.48 or later
 
 ### Build
@@ -897,7 +897,7 @@ The starter application is designed so that it can be extended to use Azure serv
 ### README.md content outline
 
 1. **ContosoInventory** — brief description.
-2. **Prerequisites** — .NET 8.0 SDK, Git.
+2. **Prerequisites** — .NET 10 SDK, Git.
 3. **Getting Started** — clone, build, run instructions.
 4. **Demo Credentials** — Mateo (Admin) and Megan (Viewer) credentials.
 5. **Project Structure** — three-project architecture overview.

@@ -6,8 +6,10 @@ This starter application is designed for the Microsoft Learn training module **"
 
 ## Prerequisites
 
-- [.NET SDK 8.0](https://dotnet.microsoft.com/download/dotnet/8.0) or later
+- [.NET SDK 10.0](https://dotnet.microsoft.com/download/dotnet/10.0) or later
 - [Git 2.48](https://git-scm.com/downloads) or later
+
+This project targets .NET 10 and is configured to use the installed .NET 10 SDK.
 
 ## Getting Started
 
