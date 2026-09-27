@@ -16,6 +16,11 @@ public class ProductsController : ControllerBase
     private readonly IProductService _productService;
     private readonly ILogger<ProductsController> _logger;
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="ProductsController"/> class.
+    /// </summary>
+    /// <param name="productService">The product service.</param>
+    /// <param name="logger">The logger.</param>
     public ProductsController(IProductService productService, ILogger<ProductsController> logger)
     {
         _productService = productService;
@@ -23,20 +28,24 @@ public class ProductsController : ControllerBase
     }
 
     /// <summary>
-    /// Returns all products.
+    /// Returns all products ordered by name, optionally filtered by category.
     /// </summary>
+    /// <param name="categoryId">Optional category identifier to filter by.</param>
+    /// <returns>A list of products.</returns>
     [HttpGet]
     [ProducesResponseType(typeof(List<ProductResponseDto>), StatusCodes.Status200OK)]
-    public async Task<IActionResult> GetAllProducts()
+    public async Task<IActionResult> GetAllProducts([FromQuery] int? categoryId)
     {
-        _logger.LogInformation("Retrieving all products.");
-        var products = await _productService.GetAllAsync();
+        _logger.LogInformation("Retrieving products (category filter: {CategoryId}).", categoryId);
+        var products = await _productService.GetAllAsync(categoryId);
         return Ok(products);
     }
 
     /// <summary>
     /// Returns a product by its unique identifier.
     /// </summary>
+    /// <param name="id">The product identifier.</param>
+    /// <returns>The product details.</returns>
     [HttpGet("{id:int}")]
     [ProducesResponseType(typeof(ProductResponseDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
@@ -54,32 +63,10 @@ public class ProductsController : ControllerBase
     }
 
     /// <summary>
-    /// Returns products for a specific category.
-    /// </summary>
-    [HttpGet("category/{categoryId:int}")]
-    [ProducesResponseType(typeof(List<ProductResponseDto>), StatusCodes.Status200OK)]
-    public async Task<IActionResult> GetProductsByCategory([FromRoute] int categoryId)
-    {
-        _logger.LogInformation("Retrieving products for category {CategoryId}.", categoryId);
-        var products = await _productService.GetByCategoryIdAsync(categoryId);
-        return Ok(products);
-    }
-
-    /// <summary>
-    /// Returns products below their reorder threshold.
-    /// </summary>
-    [HttpGet("low-stock")]
-    [ProducesResponseType(typeof(List<ProductResponseDto>), StatusCodes.Status200OK)]
-    public async Task<IActionResult> GetLowStockProducts()
-    {
-        _logger.LogInformation("Retrieving low-stock products.");
-        var products = await _productService.GetLowStockAsync();
-        return Ok(products);
-    }
-
-    /// <summary>
     /// Creates a new product.
     /// </summary>
+    /// <param name="dto">The product creation data.</param>
+    /// <returns>The created product.</returns>
     [HttpPost]
     [Authorize(Roles = "Admin")]
     [ProducesResponseType(typeof(ProductResponseDto), StatusCodes.Status201Created)]
@@ -93,9 +80,9 @@ public class ProductsController : ControllerBase
             var product = await _productService.CreateAsync(dto);
             return CreatedAtAction(nameof(GetProductById), new { id = product.Id }, product);
         }
-        catch (KeyNotFoundException ex)
+        catch (ArgumentException ex)
         {
-            return NotFound(new { message = ex.Message });
+            return BadRequest(new { message = ex.Message });
         }
         catch (InvalidOperationException ex)
         {
@@ -104,8 +91,11 @@ public class ProductsController : ControllerBase
     }
 
     /// <summary>
-    /// Updates an existing product.
+    /// Replaces an existing product's editable fields.
     /// </summary>
+    /// <param name="id">The product identifier.</param>
+    /// <param name="dto">The updated product data.</param>
+    /// <returns>The updated product.</returns>
     [HttpPut("{id:int}")]
     [Authorize(Roles = "Admin")]
     [ProducesResponseType(typeof(ProductResponseDto), StatusCodes.Status200OK)]
@@ -125,9 +115,9 @@ public class ProductsController : ControllerBase
 
             return Ok(product);
         }
-        catch (KeyNotFoundException ex)
+        catch (ArgumentException ex)
         {
-            return NotFound(new { message = ex.Message });
+            return BadRequest(new { message = ex.Message });
         }
         catch (InvalidOperationException ex)
         {
@@ -138,6 +128,8 @@ public class ProductsController : ControllerBase
     /// <summary>
     /// Deletes a product by its unique identifier.
     /// </summary>
+    /// <param name="id">The product identifier.</param>
+    /// <returns>No content on success.</returns>
     [HttpDelete("{id:int}")]
     [Authorize(Roles = "Admin")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
@@ -156,28 +148,11 @@ public class ProductsController : ControllerBase
     }
 
     /// <summary>
-    /// Toggles the active state of a product.
-    /// </summary>
-    [HttpPost("{id:int}/toggle-active")]
-    [Authorize(Roles = "Admin")]
-    [ProducesResponseType(typeof(ProductResponseDto), StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<IActionResult> ToggleActive([FromRoute] int id)
-    {
-        _logger.LogInformation("Toggling active status for product with ID {ProductId}.", id);
-        var product = await _productService.ToggleActiveAsync(id);
-
-        if (product == null)
-        {
-            return NotFound();
-        }
-
-        return Ok(product);
-    }
-
-    /// <summary>
     /// Restocks a product by the specified quantity.
     /// </summary>
+    /// <param name="id">The product identifier.</param>
+    /// <param name="dto">The restock data containing the quantity to add.</param>
+    /// <returns>The updated product.</returns>
     [HttpPost("{id:int}/restock")]
     [Authorize(Roles = "Admin")]
     [ProducesResponseType(typeof(ProductResponseDto), StatusCodes.Status200OK)]
@@ -185,7 +160,7 @@ public class ProductsController : ControllerBase
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Restock([FromRoute] int id, [FromBody] RestockProductDto dto)
     {
-        _logger.LogInformation("Restocking product with ID {ProductId}.", id);
+        _logger.LogInformation("Restocking product with ID {ProductId} by {Quantity} units.", id, dto.Quantity);
 
         try
         {

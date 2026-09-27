@@ -3,41 +3,46 @@ using System.ComponentModel.DataAnnotations.Schema;
 
 namespace ContosoInventory.Server.Models;
 
+/// <summary>
+/// Represents a product in the inventory, associated with a single category.
+/// </summary>
 public class Product
 {
+    /// <summary>Unique identifier.</summary>
     [Key]
     public int Id { get; set; }
 
+    /// <summary>Product display name.</summary>
     [Required]
     [MaxLength(200)]
     public string Name { get; set; } = string.Empty;
 
+    /// <summary>Stock Keeping Unit identifier, stored normalized (trimmed, upper case).</summary>
     [Required]
-    [MaxLength(500)]
-    public string Description { get; set; } = string.Empty;
-
-    [Required]
-    [MaxLength(100)]
+    [MaxLength(50)]
     public string Sku { get; set; } = string.Empty;
 
+    /// <summary>Optional product description.</summary>
+    [MaxLength(1000)]
+    public string? Description { get; set; }
+
+    /// <summary>Unit price.</summary>
     [Column(TypeName = "decimal(18,2)")]
-    [Range(0, double.MaxValue)]
     public decimal Price { get; set; }
 
-    [Range(0, int.MaxValue)]
+    /// <summary>Current stock level.</summary>
     public int StockQuantity { get; set; }
 
-    [Range(0, int.MaxValue)]
-    public int ReorderLevel { get; set; }
-
-    public bool IsActive { get; set; } = true;
-
+    /// <summary>Foreign key to the associated category.</summary>
     public int CategoryId { get; set; }
 
+    /// <summary>Associated category.</summary>
     [ForeignKey(nameof(CategoryId))]
     public Category Category { get; set; } = null!;
 
-    public DateTime CreatedDate { get; set; } = DateTime.UtcNow;
+    /// <summary>Creation timestamp (UTC).</summary>
+    public DateTime CreatedDate { get; set; }
 
-    public DateTime? LastModifiedDate { get; set; }
+    /// <summary>Last modification timestamp (UTC).</summary>
+    public DateTime LastUpdatedDate { get; set; }
 }

@@ -29,10 +29,11 @@ public class InventoryContext : IdentityDbContext<IdentityUser>
         {
             entity.HasKey(p => p.Id);
             entity.Property(p => p.Name).IsRequired().HasMaxLength(200);
-            entity.Property(p => p.Description).IsRequired().HasMaxLength(500);
-            entity.Property(p => p.Sku).IsRequired().HasMaxLength(100);
+            entity.Property(p => p.Sku).IsRequired().HasMaxLength(50);
+            entity.Property(p => p.Description).HasMaxLength(1000);
             entity.HasIndex(p => p.Sku).IsUnique();
-            entity.Property(p => p.Price).HasColumnType("decimal(18,2)");
+            entity.Property(p => p.Price).IsRequired().HasColumnType("decimal(18,2)");
+            entity.Property(p => p.StockQuantity).IsRequired();
 
             entity.HasOne(p => p.Category)
                 .WithMany()

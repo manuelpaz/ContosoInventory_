@@ -2,28 +2,34 @@ using System.ComponentModel.DataAnnotations;
 
 namespace ContosoInventory.Shared.DTOs;
 
+/// <summary>
+/// Request data for updating a product. All fields replace the existing values.
+/// </summary>
 public class UpdateProductDto
 {
+    /// <summary>Product display name.</summary>
+    [Required]
     [StringLength(200)]
-    public string? Name { get; set; }
+    public string Name { get; set; } = string.Empty;
 
-    [StringLength(500)]
+    /// <summary>Stock Keeping Unit identifier (unique, case-insensitive).</summary>
+    [Required]
+    [StringLength(50)]
+    public string Sku { get; set; } = string.Empty;
+
+    /// <summary>Optional product description.</summary>
+    [StringLength(1000)]
     public string? Description { get; set; }
 
-    [StringLength(100)]
-    public string? Sku { get; set; }
+    /// <summary>Unit price.</summary>
+    [Range(typeof(decimal), "0.01", "9999999.99")]
+    public decimal Price { get; set; }
 
-    [Range(0.01, double.MaxValue)]
-    public decimal? Price { get; set; }
-
+    /// <summary>Current stock level.</summary>
     [Range(0, int.MaxValue)]
-    public int? StockQuantity { get; set; }
+    public int StockQuantity { get; set; }
 
-    [Range(0, int.MaxValue)]
-    public int? ReorderLevel { get; set; }
-
-    public bool? IsActive { get; set; }
-
+    /// <summary>Identifier of the associated category.</summary>
     [Range(1, int.MaxValue)]
-    public int? CategoryId { get; set; }
+    public int CategoryId { get; set; }
 }

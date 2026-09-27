@@ -5,24 +5,43 @@ using Microsoft.EntityFrameworkCore;
 
 namespace ContosoInventory.Server.Services;
 
+/// <summary>
+/// Provides operations for managing inventory products.
+/// </summary>
 public class ProductService : IProductService
 {
+    private const string SkuConflictMessage = "The product could not be saved because another product already uses this SKU.";
+
     private readonly InventoryContext _context;
     private readonly ILogger<ProductService> _logger;
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="ProductService"/> class.
+    /// </summary>
+    /// <param name="context">The inventory database context.</param>
+    /// <param name="logger">The logger.</param>
     public ProductService(InventoryContext context, ILogger<ProductService> logger)
     {
         _context = context;
         _logger = logger;
     }
 
-    public async Task<IEnumerable<ProductResponseDto>> GetAllAsync()
+    /// <inheritdoc />
+    public async Task<List<ProductResponseDto>> GetAllAsync(int? categoryId = null)
     {
         try
         {
-            var products = await _context.Products
+            var query = _context.Products
                 .AsNoTracking()
                 .Include(p => p.Category)
+                .AsQueryable();
+
+            if (categoryId.HasValue)
+            {
+                query = query.Where(p => p.CategoryId == categoryId.Value);
+            }
+
+            var products = await query
                 .OrderBy(p => p.Name)
                 .ToListAsync();
 
@@ -30,11 +49,12 @@ public class ProductService : IProductService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error retrieving all products.");
+            _logger.LogError(ex, "Error retrieving products (category filter: {CategoryId}).", categoryId);
             throw;
         }
     }
 
+    /// <inheritdoc />
     public async Task<ProductResponseDto?> GetByIdAsync(int id)
     {
         try
@@ -53,103 +73,48 @@ public class ProductService : IProductService
         }
     }
 
-    public async Task<IEnumerable<ProductResponseDto>> GetByCategoryIdAsync(int categoryId)
-    {
-        try
-        {
-            var products = await _context.Products
-                .AsNoTracking()
-                .Include(p => p.Category)
-                .Where(p => p.CategoryId == categoryId)
-                .OrderBy(p => p.Name)
-                .ToListAsync();
-
-            return products.Select(MapToResponse).ToList();
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error retrieving products for category {CategoryId}.", categoryId);
-            throw;
-        }
-    }
-
-    public async Task<IEnumerable<ProductResponseDto>> GetLowStockAsync()
-    {
-        try
-        {
-            var products = await _context.Products
-                .AsNoTracking()
-                .Include(p => p.Category)
-                .Where(p => p.StockQuantity <= p.ReorderLevel)
-                .OrderBy(p => p.StockQuantity)
-                .ToListAsync();
-
-            return products.Select(MapToResponse).ToList();
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error retrieving low-stock products.");
-            throw;
-        }
-    }
-
+    /// <inheritdoc />
     public async Task<ProductResponseDto> CreateAsync(CreateProductDto dto)
     {
-        if (dto is null)
-        {
-            throw new ArgumentNullException(nameof(dto));
-        }
+        ArgumentNullException.ThrowIfNull(dto);
 
         try
         {
-            var categoryExists = await _context.Categories.AnyAsync(c => c.Id == dto.CategoryId);
-            if (!categoryExists)
+            await EnsureCategoryExistsAsync(dto.CategoryId);
+
+            var sku = NormalizeSku(dto.Sku);
+            if (await SkuExistsAsync(sku, excludeProductId: null))
             {
-                throw new KeyNotFoundException("Category not found.");
+                throw new InvalidOperationException($"A product with the SKU '{sku}' already exists.");
             }
 
-            var sku = dto.Sku.Trim();
-            var skuExists = await _context.Products.AnyAsync(p => p.Sku == sku);
-            if (skuExists)
-            {
-                throw new InvalidOperationException("A product with this SKU already exists.");
-            }
-
+            var now = DateTime.UtcNow;
             var product = new Product
             {
                 Name = dto.Name.Trim(),
-                Description = dto.Description.Trim(),
                 Sku = sku,
+                Description = NormalizeDescription(dto.Description),
                 Price = dto.Price,
                 StockQuantity = dto.StockQuantity,
-                ReorderLevel = dto.ReorderLevel,
-                IsActive = true,
                 CategoryId = dto.CategoryId,
-                CreatedDate = DateTime.UtcNow,
-                LastModifiedDate = DateTime.UtcNow
+                CreatedDate = now,
+                LastUpdatedDate = now
             };
 
             _context.Products.Add(product);
-            await _context.SaveChangesAsync();
+            await SaveChangesWithConflictHandlingAsync(sku);
 
-            var created = await _context.Products
-                .Include(p => p.Category)
-                .FirstOrDefaultAsync(p => p.Id == product.Id);
-
-            if (created is null)
-            {
-                throw new InvalidOperationException("Product could not be created.");
-            }
+            await _context.Entry(product).Reference(p => p.Category).LoadAsync();
 
             _logger.LogInformation("Product created: {ProductName} (ID: {ProductId}).", product.Name, product.Id);
 
-            return MapToResponse(created);
+            return MapToResponse(product);
         }
-        catch (InvalidOperationException)
+        catch (ArgumentException)
         {
             throw;
         }
-        catch (KeyNotFoundException)
+        catch (InvalidOperationException)
         {
             throw;
         }
@@ -160,91 +125,48 @@ public class ProductService : IProductService
         }
     }
 
+    /// <inheritdoc />
     public async Task<ProductResponseDto?> UpdateAsync(int id, UpdateProductDto dto)
     {
-        if (dto is null)
-        {
-            return null;
-        }
+        ArgumentNullException.ThrowIfNull(dto);
 
         try
         {
-            var product = await _context.Products
-                .Include(p => p.Category)
-                .FirstOrDefaultAsync(p => p.Id == id);
-
+            var product = await _context.Products.FirstOrDefaultAsync(p => p.Id == id);
             if (product is null)
             {
                 return null;
             }
 
-            if (!string.IsNullOrWhiteSpace(dto.Name))
+            await EnsureCategoryExistsAsync(dto.CategoryId);
+
+            var sku = NormalizeSku(dto.Sku);
+            if (await SkuExistsAsync(sku, excludeProductId: id))
             {
-                product.Name = dto.Name.Trim();
+                throw new InvalidOperationException($"A different product already uses the SKU '{sku}'.");
             }
 
-            if (!string.IsNullOrWhiteSpace(dto.Description))
-            {
-                product.Description = dto.Description.Trim();
-            }
+            product.Name = dto.Name.Trim();
+            product.Sku = sku;
+            product.Description = NormalizeDescription(dto.Description);
+            product.Price = dto.Price;
+            product.StockQuantity = dto.StockQuantity;
+            product.CategoryId = dto.CategoryId;
+            product.LastUpdatedDate = DateTime.UtcNow;
 
-            if (!string.IsNullOrWhiteSpace(dto.Sku))
-            {
-                var normalizedSku = dto.Sku.Trim();
-                var duplicateExists = await _context.Products
-                    .AnyAsync(p => p.Id != id && p.Sku == normalizedSku);
+            await SaveChangesWithConflictHandlingAsync(sku);
 
-                if (duplicateExists)
-                {
-                    throw new InvalidOperationException("A different product already uses this SKU.");
-                }
-
-                product.Sku = normalizedSku;
-            }
-
-            if (dto.Price.HasValue)
-            {
-                product.Price = dto.Price.Value;
-            }
-
-            if (dto.StockQuantity.HasValue)
-            {
-                product.StockQuantity = dto.StockQuantity.Value;
-            }
-
-            if (dto.ReorderLevel.HasValue)
-            {
-                product.ReorderLevel = dto.ReorderLevel.Value;
-            }
-
-            if (dto.IsActive.HasValue)
-            {
-                product.IsActive = dto.IsActive.Value;
-            }
-
-            if (dto.CategoryId.HasValue)
-            {
-                var categoryExists = await _context.Categories.AnyAsync(c => c.Id == dto.CategoryId.Value);
-                if (!categoryExists)
-                {
-                    throw new KeyNotFoundException("Category not found.");
-                }
-
-                product.CategoryId = dto.CategoryId.Value;
-            }
-
-            product.LastModifiedDate = DateTime.UtcNow;
-            await _context.SaveChangesAsync();
+            await _context.Entry(product).Reference(p => p.Category).LoadAsync();
 
             _logger.LogInformation("Product updated: {ProductName} (ID: {ProductId}).", product.Name, product.Id);
 
-            return await GetByIdAsync(id);
+            return MapToResponse(product);
         }
-        catch (InvalidOperationException)
+        catch (ArgumentException)
         {
             throw;
         }
-        catch (KeyNotFoundException)
+        catch (InvalidOperationException)
         {
             throw;
         }
@@ -255,6 +177,7 @@ public class ProductService : IProductService
         }
     }
 
+    /// <inheritdoc />
     public async Task<bool> DeleteAsync(int id)
     {
         try
@@ -279,36 +202,7 @@ public class ProductService : IProductService
         }
     }
 
-    public async Task<ProductResponseDto?> ToggleActiveAsync(int id)
-    {
-        try
-        {
-            var product = await _context.Products
-                .Include(p => p.Category)
-                .FirstOrDefaultAsync(p => p.Id == id);
-
-            if (product is null)
-            {
-                return null;
-            }
-
-            product.IsActive = !product.IsActive;
-            product.LastModifiedDate = DateTime.UtcNow;
-
-            await _context.SaveChangesAsync();
-
-            _logger.LogInformation("Product toggled: {ProductName} (ID: {ProductId}) is now {Status}.",
-                product.Name, product.Id, product.IsActive ? "active" : "inactive");
-
-            return MapToResponse(product);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error toggling active status for product with ID {ProductId}.", id);
-            throw;
-        }
-    }
-
+    /// <inheritdoc />
     public async Task<ProductResponseDto?> RestockAsync(int id, int quantity)
     {
         if (quantity <= 0)
@@ -327,8 +221,13 @@ public class ProductService : IProductService
                 return null;
             }
 
+            if (quantity > int.MaxValue - product.StockQuantity)
+            {
+                throw new ArgumentOutOfRangeException(nameof(quantity), "Restocking by this quantity would exceed the maximum stock level.");
+            }
+
             product.StockQuantity += quantity;
-            product.LastModifiedDate = DateTime.UtcNow;
+            product.LastUpdatedDate = DateTime.UtcNow;
 
             await _context.SaveChangesAsync();
 
@@ -337,6 +236,10 @@ public class ProductService : IProductService
 
             return MapToResponse(product);
         }
+        catch (ArgumentException)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error restocking product with ID {ProductId}.", id);
@@ -344,22 +247,66 @@ public class ProductService : IProductService
         }
     }
 
+    /// <summary>
+    /// Throws an <see cref="ArgumentException"/> when the category does not exist.
+    /// </summary>
+    private async Task EnsureCategoryExistsAsync(int categoryId)
+    {
+        var categoryExists = await _context.Categories.AnyAsync(c => c.Id == categoryId);
+        if (!categoryExists)
+        {
+            throw new ArgumentException($"Category {categoryId} does not exist.", "CategoryId");
+        }
+    }
+
+    /// <summary>
+    /// Checks whether a SKU is already used (case-insensitive), optionally excluding a product.
+    /// </summary>
+    private Task<bool> SkuExistsAsync(string normalizedSku, int? excludeProductId)
+    {
+        // Compare against the upper-cased stored value so legacy rows saved before
+        // normalization are still matched case-insensitively.
+        return _context.Products.AnyAsync(p =>
+            p.Sku.ToUpper() == normalizedSku &&
+            (!excludeProductId.HasValue || p.Id != excludeProductId.Value));
+    }
+
+    /// <summary>
+    /// Saves changes, translating database constraint violations (e.g. a concurrent
+    /// duplicate SKU insert) into an <see cref="InvalidOperationException"/>.
+    /// </summary>
+    private async Task SaveChangesWithConflictHandlingAsync(string sku)
+    {
+        try
+        {
+            await _context.SaveChangesAsync();
+        }
+        catch (DbUpdateException ex)
+        {
+            _logger.LogWarning(ex, "Database update conflict while saving product with SKU {Sku}.", sku);
+            throw new InvalidOperationException(SkuConflictMessage, ex);
+        }
+    }
+
+    private static string NormalizeSku(string sku) => sku.Trim().ToUpperInvariant();
+
+    private static string? NormalizeDescription(string? description) =>
+        string.IsNullOrWhiteSpace(description) ? null : description.Trim();
+
     private static ProductResponseDto MapToResponse(Product product)
     {
         return new ProductResponseDto
         {
             Id = product.Id,
             Name = product.Name,
-            Description = product.Description,
             Sku = product.Sku,
+            Description = product.Description,
             Price = product.Price,
             StockQuantity = product.StockQuantity,
-            ReorderLevel = product.ReorderLevel,
-            IsActive = product.IsActive,
             CategoryId = product.CategoryId,
             CategoryName = product.Category?.Name ?? string.Empty,
             CreatedDate = product.CreatedDate,
-            LastModifiedDate = product.LastModifiedDate
+            LastUpdatedDate = product.LastUpdatedDate
         };
     }
 }
