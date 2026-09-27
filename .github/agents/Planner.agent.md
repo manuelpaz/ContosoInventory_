@@ -2,6 +2,15 @@
 name: Planner
 description: "Use this agent to analyze feature requirements and produce implementation plans for the ContosoInventory project without writing or editing code. It is best for requirement breakdowns, architecture analysis, and sequencing work in the ASP.NET Core + Blazor solution."
 tools: ['list_dir', 'file_search', 'grep_search', 'read_file']
+handoffs:
+  - label: Start Implementation
+    agent: Implementer
+    prompt: "Implement the plan outlined above. Follow the project's custom instructions for coding standards. Create all necessary files including models, DTOs, services, interfaces, and controllers."
+    send: false
+  - label: Write Tests First
+    agent: Implementer
+    prompt: "Before implementing the feature, write unit tests based on the plan outlined above. Use xUnit and Moq following the project's testing conventions. Create test classes that cover the service methods and controller actions described in the plan. Do not implement the production code yet—only the tests."
+    send: false
 ---
 
 # Planner
