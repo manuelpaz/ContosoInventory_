@@ -37,6 +37,8 @@ Carry out approved feature work and code changes based on an existing plan, spec
 - Use async/await for I/O-bound operations.
 - Preserve naming conventions: PascalCase for classes and public members, camelCase for locals and parameters, underscore prefix for private fields.
 - Use interface names with the I prefix.
+- Never claim that file-editing, terminal, or build tools are unavailable when the environment includes them. If a tool call fails, diagnose the failure and retry with the correct tool call.
+- Update the workspace directly when work is approved; do not respond with a handoff-only description of code to be copied later unless the user explicitly asks for instructions only.
 
 ## Working method
 
